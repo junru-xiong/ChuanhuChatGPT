@@ -19,13 +19,11 @@ from modules.utils import *
 def get_index_name(file_src):
     file_paths = [x.name for x in file_src]
     file_paths.sort(key=lambda x: os.path.basename(x))
-
     md5_hash = hashlib.md5()
     for file_path in file_paths:
         with open(file_path, "rb") as f:
             while chunk := f.read(8192):
                 md5_hash.update(chunk)
-
     return md5_hash.hexdigest()
 
 def block_split(text):
@@ -40,40 +38,34 @@ def get_documents(file_src):
     logging.debug("Loading documents...")
     logging.debug(f"file_src: {file_src}")
     for file in file_src:
-        filepath = file.name
-        filename = os.path.basename(filepath)
-        file_type = os.path.splitext(filepath)[1]
-        logging.info(f"loading file: {filename}")
-        if file_type == ".pdf":
+        logging.info(f"loading file: {file.name}")
+        if os.path.splitext(file.name)[1] == ".pdf":
             logging.debug("Loading PDF...")
             try:
                 from modules.pdf_func import parse_pdf
                 from modules.config import advance_docs
                 two_column = advance_docs["pdf"].get("two_column", False)
-                pdftext = parse_pdf(filepath, two_column).text
+                pdftext = parse_pdf(file.name, two_column).text
             except:
                 pdftext = ""
-                with open(filepath, 'rb') as pdfFileObj:
+                with open(file.name, 'rb') as pdfFileObj:
                     pdfReader = PyPDF2.PdfReader(pdfFileObj)
                     for page in tqdm(pdfReader.pages):
                         pdftext += page.extract_text()
             text_raw = pdftext
-        elif file_type == ".docx":
-            logging.debug("Loading Word...")
+        elif os.path.splitext(file.name)[1] == ".docx":
+            logging.debug("Loading DOCX...")
             DocxReader = download_loader("DocxReader")
             loader = DocxReader()
-            text_raw = loader.load_data(file=filepath)[0].text
-        elif file_type == ".epub":
+            text_raw = loader.load_data(file=file.name)[0].text
+        elif os.path.splitext(file.name)[1] == ".epub":
             logging.debug("Loading EPUB...")
             EpubReader = download_loader("EpubReader")
             loader = EpubReader()
-            text_raw = loader.load_data(file=filepath)[0].text
-        elif file_type == ".xlsx":
-            logging.debug("Loading Excel...")
-            text_raw = excel_to_string(filepath)
+            text_raw = loader.load_data(file=file.name)[0].text
         else:
             logging.debug("Loading text file...")
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(file.name, "r", encoding="utf-8") as f:
                 text_raw = f.read()
         text = add_space(text_raw)
         # text = block_split(text)
@@ -86,7 +78,7 @@ def get_documents(file_src):
 def construct_index(
         api_key,
         file_src,
-        max_input_size=4096,
+        max_input_size=7500,
         num_outputs=5,
         max_chunk_overlap=20,
         chunk_size_limit=600,
@@ -95,17 +87,18 @@ def construct_index(
 ):
     from langchain.chat_models import ChatOpenAI
     from llama_index import GPTSimpleVectorIndex, ServiceContext
-
+    
     os.environ["OPENAI_API_KEY"] = api_key
     chunk_size_limit = None if chunk_size_limit == 0 else chunk_size_limit
     embedding_limit = None if embedding_limit == 0 else embedding_limit
     separator = " " if separator == "" else separator
 
     llm_predictor = LLMPredictor(
-        llm=ChatOpenAI(model_name="gpt-3.5-turbo-0301", openai_api_key=api_key)
+        llm=ChatOpenAI(model_name="gpt-4", openai_api_key=api_key)
     )
     prompt_helper = PromptHelper(max_input_size = max_input_size, num_output = num_outputs, max_chunk_overlap = max_chunk_overlap, embedding_limit=embedding_limit, chunk_size_limit=600, separator=separator)
     index_name = get_index_name(file_src)
+    print('index_name++++++',index_name)
     if os.path.exists(f"./index/{index_name}.json"):
         logging.info("找到了缓存的索引文件，加载中……")
         return GPTSimpleVectorIndex.load_from_disk(f"./index/{index_name}.json")
@@ -128,7 +121,7 @@ def construct_index(
             logging.error("索引构建失败！", e)
             print(e)
             return None
-
+        
 
 def add_space(text):
     punctuations = {"，": "， ", "。": "。 ", "？": "？ ", "！": "！ ", "：": "： ", "；": "； "}
